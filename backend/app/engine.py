@@ -103,7 +103,12 @@ class Engine:
         kind={'discussion':'speech','defense':'speech','vote':'vote','mafia_chat':'secret','night':'night','dead':'dead','interview':'interview'}.get(phase)
         return {'actor':pid,'kind':kind,'eligible':self.eligible(pid,kind)} if kind else None
     def apply(self,task,result,meta):
-        s=self.s;pid=task['actor'];kind=task['kind'];target=result.get('target')
+        if task!=self.next_task():raise ValueError('이미 처리됐거나 현재 순서와 다른 행동입니다.')
+        s=self.s;pid=task['actor'];kind=task['kind'];target=result.get('target');p=self.player(pid)
+        if kind in ('speech','secret','vote','night') and not p['alive']:raise ValueError('사망자는 생존자 행동에 참여할 수 없습니다.')
+        if kind=='dead' and p['alive']:raise ValueError('생존자는 사망자 채팅에 참여할 수 없습니다.')
+        if kind=='night' and p['role'] not in (Role.MAFIA,Role.POLICE,Role.DOCTOR,Role.BODYGUARD):raise ValueError('사용할 밤 능력이 없습니다.')
+        if kind=='secret' and team(p['role'])!='mafia':raise ValueError('마피아 진영만 비밀 대화에 참여할 수 있습니다.')
         if kind in ('vote','night') and target not in task['eligible']: raise ValueError('선택 대상이 유효하지 않습니다.')
         speech=result.get('speech','').strip()
         if kind in ('speech','secret','dead','interview') and not speech: raise ValueError('발언 또는 명시적인 침묵이 필요합니다.')
@@ -116,6 +121,8 @@ class Engine:
         if kind=='dead':
             key=str(s['day'])+':'+pid;s['dead_usage'][key]=s['dead_usage'].get(key,0)+1
         mem=s['memories'].setdefault(pid,{'opinions':[]})
+        if kind in ('speech','secret','dead','interview'):
+            mem['own_statements']=(mem.get('own_statements',[])+[{'day':s['day'],'channel':channel,'text':speech}])[-4:]
         if result.get('memory'):
             mem['opinions']=(mem['opinions']+[{'day':s['day'],'note':result['memory'][:220]}])[-8:]
         s['cursor']+=1
@@ -167,4 +174,5 @@ class Engine:
           'players':players,'events':[e for e in s['events'] if e['channel'] in ('public','dead')],
           'mode':s['config']['mode'],'intensity':s['config']['intensity'],'provider':s['config']['provider'],
           'rounds':s['config']['rounds'],'series_count':s['config']['series_count'],
+          'inference':{k:s['config']['inference'].get(k) for k in ('num_ctx','num_predict','reasoning_budget','num_batch','num_gpu','thinking','model_profiles')},
           'interviews_pending':ended and s['phase']!='finished'}

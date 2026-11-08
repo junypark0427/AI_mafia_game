@@ -54,7 +54,7 @@ def build_prompt(engine,task):
     role_counts=dict(Counter(ROLE_NAMES[x['role']] for x in s['players']))
     context={'starting_role_counts':role_counts,'day':s['day'],'round':s['round'],'phase':s['phase'],'players':public_players,'public_facts_columns':'[day,kind,actor_seat,target_seat] for votes; [day,death,victim_seat,public_role,cause] for deaths','public_facts':facts,
              'recent_public_speech':recent,'omitted_old_speech':len(chat)-len(recent),
-             'your_subjective_notes':s['memories'].get(pid,{}).get('opinions',[])[-4:],'faction_chat':secret[-4:],'dead_chat':dead[-4:]}
+             'your_subjective_notes':s['memories'].get(pid,{}).get('opinions',[])[-4:],'your_previous_statements':s['memories'].get(pid,{}).get('own_statements',[])[-2:],'faction_chat':secret[-4:],'dead_chat':dead[-4:]}
     requests={'speech':'본인 한 명의 발언만 하라. 다른 참가자의 대사나 진행자 설명을 대신 쓰지 마라. 최근 공개 발언을 읽고 질문·반박·의심·변호를 자유롭게 하라. 대체로 2~4문장으로 간결하게 말하되 문체는 자유다. 침묵하려면 speech에 [침묵]이라고 써라.',
       'vote':'네가 처형에 투표할 상대를 선택 가능한 ID 중 한 명으로 결정하라. target에 정확한 ID를 쓰고 speech와 memory는 빈 문자열로 둬라.',
       'secret':'마피아 진영 동료에게만 전달할 짧은 비밀 대화. 공격 계획을 자유롭게 논의하라.',
@@ -67,9 +67,10 @@ def build_prompt(engine,task):
         requests['speech']+=' 이번 라운드에서는 실제로 나온 특정 발언이나 질문에 반응하라. 단순한 규칙 설명이나 직전 문장의 반복에 그치지 마라.'
     if task['kind']=='interview':context['final_reveal']=[{'id':x['id'],'role':ROLE_NAMES[x['role']]} for x in s['players']];context['winner']=s['winner']
     rules=RULES+'\n'+'\n'.join(text for role,text in OPTIONAL_RULES.items() if role in cfg['enabled_roles'])
+    output_request=('target에는 선택 가능한 ID를 쓰고 speech와 memory는 빈 문자열로 둬라. JSON {\"speech\":\"\",\"target\":ID,\"memory\":\"\"}만 출력하라.' if task['kind'] in ('vote','night') else 'speech와 memory는 한국어로만 쓰고 target은 null이다. JSON {\"speech\":\"실제 발언\",\"target\":null,\"memory\":\"짧은 주관적 인상\"}만 출력하라.')
     layers=[rules,'네게만 주어진 확정 비밀 정보: '+json.dumps(own,ensure_ascii=False),
       '확정 공개 사건과 주관적 기억을 구분한 자료: '+json.dumps(context,ensure_ascii=False),
-      requests[task['kind']]+' 선택 가능 ID: '+json.dumps(task['eligible'])+' speech와 memory는 한국어로만 쓰고 target에는 ID 또는 null을 쓰라. Respond in Korean. JSON {"speech":"실제 발언", "target":null 또는 ID, "memory":"80자 안팎의 주관적 인상"}만 출력하라.']
+      requests[task['kind']]+' 선택 가능 ID: '+json.dumps(task['eligible'])+' '+output_request]
     style=style_snapshot(s,pid)
     if style['character_applied']:
         c=cfg['characters'][pid]
@@ -78,7 +79,7 @@ def build_prompt(engine,task):
     def estimate():
         text=''.join(layers);non_ascii=sum(ord(c)>127 for c in text)
         return int(non_ascii*1.1+(len(text)-non_ascii)/3.5)+64
-    for key in ('recent_public_speech','your_subjective_notes','faction_chat','dead_chat'):
+    for key in ('recent_public_speech','your_previous_statements','your_subjective_notes','faction_chat','dead_chat'):
         while estimate()+reserve>cfg['inference']['num_ctx'] and context[key]:
             context[key].pop(0)
             context['omitted_old_speech']=len(chat)-len(context['recent_public_speech'])
@@ -91,7 +92,8 @@ def audit_prompt(engine,task,messages):
     """Verify the actual serialized allowlists and journal scope, never chain-of-thought."""
     import hashlib
     pid=task['actor'];s=engine.s;p=engine.player(pid)
-    blocks=messages[1]['content'].split('\n\n')
+    source=next(m['content'] for m in messages if m['role']=='user' and '네게만 주어진 확정 비밀 정보: ' in m['content'])
+    blocks=('네게만 주어진 확정 비밀 정보: '+source.partition('네게만 주어진 확정 비밀 정보: ')[2]).split('\n\n')
     own=json.loads(blocks[0].partition(': ')[2]);context=json.loads(blocks[1].partition(': ')[2])
     def require(condition):
         if not condition:raise ModelError('프롬프트 정보 격리 검사 실패: 모델 호출을 중지했습니다.',code='prompt_isolation_failed')
@@ -110,6 +112,7 @@ def audit_prompt(engine,task,messages):
     for statement in context['recent_public_speech']:
         event=events[statement['id']]
         require(event['channel']=='public' and event['kind']=='speech' and event['text']==statement['text'])
+    require(all(note in s['memories'].get(pid,{}).get('own_statements',[]) for note in context.get('your_previous_statements',[])))
     allowed_notes=s['memories'].get(pid,{}).get('opinions',[])
     require(all(note in allowed_notes for note in context['your_subjective_notes']))
     return {'verified':True,'private_owner':pid,'model':p['model'],'messages_sha256':hashlib.sha256(json.dumps(messages,ensure_ascii=False).encode()).hexdigest(),

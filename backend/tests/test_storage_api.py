@@ -219,3 +219,27 @@ def test_lab_cancel_releases_busy_and_records_cancellation(client,monkeypatch):
         time.sleep(.01)
     assert not result['busy'] and result['job']['status']=='cancelled'
     assert c.get('/api/admin/benchmarks',headers=AUTH).json()[0]['outcome']=='cancelled'
+
+
+def test_private_inference_identity_is_not_public(client,monkeypatch):
+    c,m=client;cfg=GameConfig(provider='mock',random_roles=False).model_dump(mode='json')
+    c.post('/api/admin/start',json=cfg,headers=AUTH)
+    m.manager.busy={'actor':'gemma','model':'gemma3:4b','kind':'night','started':1,'style':{'mode':'original','character_applied':False}}
+    async def inventory():return {'online':True,'active':{'model':'gemma3:4b'},'loaded':[{'name':'gemma3:4b'}]}
+    monkeypatch.setattr(m.ollama,'inventory',inventory)
+    public=c.get('/api/state').json()
+    assert public['busy']['actor'] is None and public['busy']['kind']=='hidden'
+    assert c.get('/api/health').json()['active'] is None and c.get('/api/health').json()['loaded']==[]
+    assert c.get('/api/admin/state',headers=AUTH).json()['busy']['actor']=='gemma'
+
+
+def test_stats_exclude_completed_record_without_winner(tmp_path):
+    store=Store(tmp_path/'test.db');e=Engine(GameConfig());e.s['status']='completed';e.s['winner']=None;store.save(e.s)
+    assert store.stats()==[]
+
+
+def test_fresh_browser_state_has_current_saved_game(client):
+    c,m=client
+    result=c.post('/api/admin/start',json=GameConfig(provider='mock').model_dump(mode='json'),headers=AUTH)
+    fresh=c.get('/api/state').json()
+    assert fresh['game']['id']==result.json()['game']['id'] and fresh['game']['revision']==result.json()['game']['revision']

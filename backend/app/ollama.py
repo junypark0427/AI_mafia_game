@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio,json,re,time
+import asyncio,hashlib,json,re,time
 import httpx
 from .models import CATALOG
 from .memory import memory_snapshot,assess_memory,emergency_reason
@@ -16,7 +16,17 @@ def clean_final(text):
 
 class Ollama:
     def __init__(self,url='http://127.0.0.1:11434'):
-        self.url=url.rstrip('/');self.lock=asyncio.Lock();self.models={};self.active=None;self.unload_failed=False
+        self.url=url.rstrip('/');self.lock=asyncio.Lock();self.models={};self.active=None;self.unload_failed=False;self.descriptions={}
+    async def describe(self,model):
+        key=(model,self.models[model].get("digest"))
+        if key not in self.descriptions:
+            async with httpx.AsyncClient(timeout=8,trust_env=False) as c:
+                r=await c.post(self.url+"/api/show",json={"model":model})
+                if r.status_code==200:self.descriptions[key]=r.json()
+                else:self.descriptions[key]={}
+        description=self.descriptions[key]
+        if "capabilities" in description:self.models[model]["capabilities"]=description["capabilities"]
+        return description
     async def inventory(self):
         try:
             async with httpx.AsyncClient(timeout=5,trust_env=False) as c:
@@ -67,6 +77,7 @@ class Ollama:
             if not loaded:self.unload_failed=False
             version=tuple(int(n) for n in inventory['version'].split('.')[:3] if n.isdigit())
             if model.startswith('ministral-3:') and version<(0,13,1):raise ModelError('Ministral 3는 Ollama 0.13.1 이상이 필요합니다.',code='unsupported_version')
+            description=await self.describe(model) if model in self.models else {}
             before=self.guard(model,options,risk_once=risk_once)
             assessment=self.assessment(model,options)
             self.active={'model':model,'state':'loading','started':time.time(),'risk_once':risk_once}
@@ -78,7 +89,7 @@ class Ollama:
                 return {'model':model,'digest':self.models[model].get('digest'),'seconds':round(time.monotonic()-start,3),
                     'first_token_seconds':round(first,3) if first is not None else None,'first_content_seconds':round(visible,3) if visible is not None else None,
                     'load_seconds':round(final.get('load_duration',0)/1e9,3),'tokens':tokens,'tps':round(tokens/duration,2) if duration else None,
-                    'done_reason':final.get('done_reason'),'memory_before':before,'memory_after':after,
+                    'prompt_tokens':final.get('prompt_eval_count'),'template_sha256':hashlib.sha256(description.get('template','').encode()).hexdigest(),'template_source':description.get('template_source'),'renderer':description.get('renderer'),'parser':description.get('parser'),'capabilities':self.models[model].get('capabilities',[]),'thinking_configured':options.get('thinking'),'done_reason':final.get('done_reason'),'memory_before':before,'memory_after':after,
                     'peak_used_gb':peak,'peak_swap_gb':peak_swap,'swap_delta_gb':round(swap_after-swap_before,3) if swap_before is not None and swap_after is not None else None,
                     'memory_samples':samples[-180:],'assessment':assessment,'risk_once':risk_once,'attempted':attempted,'phase':phase,'runtime_options':dict(payload['options']),'thinking_requested':payload.get('think')}
             async def sample():
@@ -129,7 +140,7 @@ class Ollama:
                 if not final:raise ModelError('완료 신호 없는 응답',code='incomplete_response')
                 if final.get('model',model)!=model:raise ModelError('모델 태그 불일치',code='model_mismatch')
                 content=clean_final(''.join(chunks))
-                if not content:raise ModelError('최종 발언 없음: 내부 추론 예산 소진 가능. 추론 예산을 조절하세요.',code='empty_final_output')
+                if not content:raise ModelError(f'{model}: 최종 발언 없음 (생성 {final.get("eval_count",0)}토큰, 종료 {final.get("done_reason")}). 내부 추론이 예산을 소진했을 수 있습니다. 모델 실험실에서 추론 예산·모드를 비교하세요. 충분한 예산에서도 반복되면 현재 모델의 실행 한계일 수 있습니다.',code='empty_final_output')
                 result=(content,metrics())
             except asyncio.CancelledError as e:
                 if pressure_reason:failure=ModelError('메모리 압박으로 실행 중지: '+pressure_reason[0],code='memory_emergency_stop',attempted=attempted,phase=phase,metrics=metrics())

@@ -43,7 +43,7 @@ class Store:
         records=defaultdict(list)
         for s in self.all():
             category='mixed' if s['mixed'] else s['mode_history'][0]
-            if s['status']!='completed' or s['config']['provider']!='ollama' or category!=mode:continue
+            if s['status']!='completed' or s.get('winner') not in ('town','mafia') or s['config']['provider']!='ollama' or category!=mode:continue
             for p in s['players']: records[(p['model'],p.get('digest'))].append((s,p))
         out=[]
         for (model,digest),items in records.items():

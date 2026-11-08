@@ -51,7 +51,7 @@ def run_game(c,stage):
     config=call(c,'/api/admin/settings')['config']
     for p,model in zip(config['players'],MODELS):p['model']=model
     config.update(provider='ollama',mode='original' if stage!='character' else 'character',rounds=3 if stage=='full' else 1,random_roles=True,
-        auto=True,last_words=True,dead_chat=True,dead_reactions=1,interviews=False,series_count=1,max_days=8 if stage=='full' else 4)
+        auto=True,last_words=True,dead_chat=True,dead_reactions=1,interviews=False,series_count=1,max_calls=220,max_runtime_minutes=30,max_days=8 if stage=='full' else 4)
     config['inference'].update(num_ctx=4096,num_gpu=0,num_batch=64,thinking=False,num_predict=512,reasoning_budget=1024,temperature=.7,timeout=150,retries=1)
     if stage=='character':config['inference']['num_ctx']=4096
     call(c,'/api/admin/validate','POST',config)

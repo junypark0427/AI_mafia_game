@@ -1,6 +1,7 @@
 from .engine import now
 from .prompts import RULES
 from .ollama import ModelError
+from .quality import validate_speech
 SCENARIOS=[
  ('first_day','너는 시민이다. 첫날 아무 정보가 없다. 참가자는 DeepSeek, Gemma, Ministral, EXAONE, Qwen, Llama다. 지금 토론에서 할 말을 2~4문장으로 말하라.'),
  ('accused','너는 시민이다. Gemma가 "당신은 근거 없이 Qwen을 몰아갔으니 마피아야"라고 의심한다. 자연스럽게 대응하라.'),
@@ -28,12 +29,14 @@ async def run_benchmark(ollama,store,models,options,quality=False,*,risk_once=Fa
                     kwargs={'risk_once':True} if risk_once else {}
                     content,metrics=await ollama.generate(model,[{'role':'system','content':RULES},{'role':'user','content':prompt}],options,**kwargs)
                     r.update(metrics,output=content,error=None,outcome='success',hangul_characters=sum('가'<=c<='힣' for c in content))
+                    validate_speech(content,metrics)
+                    r['quality_status']='형식 검사 통과 · 의미/전략은 사람의 검토 필요'
                 except asyncio.CancelledError as e:
                     r.update(getattr(e,'metrics',{}),error='사용자가 실험을 중단했습니다.',error_code='cancelled',output=None,outcome='cancelled')
                     store.benchmark(r);results.append(r);progress.update(phase='cancelled');return results
                 except ModelError as e:
                     outcome='emergency_stopped' if e.code=='memory_emergency_stop' else 'failed' if e.attempted else 'deferred'
-                    r.update(e.metrics,error=str(e),error_code=e.code,output=None,outcome=outcome,attempted=e.attempted,phase=e.phase)
+                    r.update(e.metrics,error=str(e),error_code=e.code,output=r.get('output'),outcome=outcome,attempted=e.attempted,phase=e.phase)
                 store.benchmark(r);results.append(r);progress.update(completed=len(results),last_outcome=r['outcome'])
                 retry=r.get('error_code') in ('ollama_transport_error','ollama_http_error','timeout') and attempt+1<limit
                 if not retry:break

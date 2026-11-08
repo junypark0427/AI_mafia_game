@@ -90,3 +90,19 @@ def test_max_day_limit_is_invalid_without_winner():
     e.s['day']=2;e.phase('dead',[]);e.s['after_dead']='day'
     e.advance()
     assert e.s['status']=='invalid' and e.s['phase']=='finished' and e.s['winner'] is None
+
+
+def test_duplicate_task_cannot_advance_or_overwrite_choice():
+    e=Engine(GameConfig(provider='mock'));e.phase('vote');task=e.next_task()
+    result={'target':task['eligible'][0],'speech':'','memory':''};e.apply(task,result,{})
+    before=copy.deepcopy(e.s)
+    with pytest.raises(ValueError,match='현재 순서'):e.apply(task,result,{})
+    assert e.s==before
+
+
+@pytest.mark.parametrize('phase,actor',[('vote','llama'),('night','llama'),('discussion','llama')])
+def test_dead_actor_cannot_use_living_phase_even_with_bad_queue(phase,actor):
+    e=Engine(GameConfig(provider='mock'));e.player(actor)['alive']=False;e.phase(phase,[actor])
+    task=e.next_task()
+    with pytest.raises(ValueError,match='사망자는'):e.apply(task,{'speech':'말','target':'qwen'},{})
+    assert e.s['cursor']==0 and not e.s['votes'] and not e.s['night_actions']

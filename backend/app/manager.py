@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio,copy,json,time
 from .models import GameConfig
+from .quality import adapt_request,validate_speech,fit_request,PROFILE_VERSION,SPEECH_KINDS
 from .engine import Engine,now
 from .ollama import ModelError,MockAI,clean_final
 from .prompts import build_prompt,audit_prompt,schema_for,style_snapshot,SCHEMA
@@ -59,37 +60,46 @@ class Manager:
             if not automatic and self.auto_task and not self.auto_task.done():raise Conflict('자동 진행을 먼저 일시정지하세요.')
             if automatic and self.pause_requested:return
             g=self.game;task=g.next_task();self.last_error=None
+            if task and len(g.s['calls'])>=g.s['config'].get('max_calls',300):
+                self.finish_limit('모델 호출 횟수 한도');return self.snapshot()
             try:
                 if task:
                     # Snapshot BEFORE awaiting generation. Mode edits affect only the next request.
                     frozen=Engine.restore(copy.deepcopy(g.s));messages,style=build_prompt(frozen,task)
+                    messages,options,schema,protocol=adapt_request(messages,g.s['config']['inference'],g.player(task['actor'])['model'],task)
                     prompt_scope=audit_prompt(frozen,task,messages)
                     self.busy={'actor':task['actor'],'model':g.player(task['actor'])['model'],'kind':task['kind'],'style':style,'started':time.time()}
                     tries=g.s['config']['inference']['retries']+1
                     for attempt in range(tries):
-                        metric=None
+                        if len(g.s['calls'])>=g.s['config'].get('max_calls',300):
+                            self.finish_limit('모델 호출 횟수 한도');break
+                        metric=None;text=None
                         try:
                             if g.s['config']['provider']=='mock':result,metric=await MockAI().act(frozen,task)
                             else:
-                                text,metric=await self.ollama.generate(g.player(task['actor'])['model'],messages,g.s['config']['inference'],schema_for(task))
-                                result=json.loads(clean_final(text))
+                                text,metric=await self.ollama.generate(g.player(task['actor'])['model'],messages,options,schema)
+                                if metric.get('done_reason')=='length':validate_speech('',metric,frozen,task)
+                                result=json.loads(clean_final(text)) if protocol=='json' else {'speech':clean_final(text),'memory':'','target':None}
                                 if not isinstance(result,dict) or set(result)!={'speech','target','memory'}:raise ValueError('JSON 필드가 유효하지 않습니다.')
                                 if not isinstance(result['speech'],str) or not isinstance(result['memory'],str):raise ValueError('발언 및 메모 타입 오류')
                                 result['speech']=clean_final(result['speech']);result['memory']=clean_final(result['memory'])
                             if g.s['config']['provider']=='ollama' and metric.get('digest')!=g.player(task['actor'])['digest']:
                                 raise ModelError('경기 중 모델 버전이 변경되었습니다. 새 경기를 시작하세요.')
                             if len(result.get('speech',''))>1800 or len(result.get('memory',''))>220:raise ValueError('출력 길이 제한 초과')
+                            if g.s['config']['provider']=='ollama' and task['kind'] in SPEECH_KINDS:validate_speech(result['speech'],metric,frozen,task)
+                            if metric is not None:metric.update(profile_version=PROFILE_VERSION if options.get('model_profiles',True) else None,response_protocol=protocol)
                             g.apply(task,result,style)
                             g.s['calls'].append(dict(metric,prompt_scope=prompt_scope,actor=task['actor'],kind=task['kind'],day=g.s['day'],target=result.get('target'),style=style,at=now()))
                             break
                         except (ModelError,ValueError,TypeError) as e:
                             failed_metric=metric or (e.metrics if isinstance(e,ModelError) else {})
-                            g.s['calls'].append(dict(failed_metric,prompt_scope=prompt_scope,actor=task['actor'],model=g.player(task['actor'])['model'],kind=task['kind'],day=g.s['day'],seconds=failed_metric.get('seconds',0),error=str(e),error_code=e.code if isinstance(e,ModelError) else 'invalid_action',style=style,at=now()))
-                            retryable=not isinstance(e,ModelError) or e.code in ('ollama_transport_error','ollama_http_error','timeout','invalid_output','empty_final_output')
+                            g.s['calls'].append(dict(failed_metric,prompt_scope=prompt_scope,actor=task['actor'],model=g.player(task['actor'])['model'],kind=task['kind'],day=g.s['day'],seconds=failed_metric.get('seconds',0),raw_output=text,error=str(e),error_code=e.code if isinstance(e,ModelError) else 'invalid_action',style=style,at=now()))
+                            retryable=not isinstance(e,ModelError) or e.code in ('ollama_transport_error','ollama_http_error','timeout','invalid_output','empty_final_output','output_truncated','dialogue_quality','dialogue_repetition')
                             if attempt+1==tries or not retryable:
                                 if isinstance(e,ModelError):raise
                                 raise ModelError(str(e),code='invalid_action') from e
-                            messages=messages+[{'role':'user','content':'유효하지 않은 응답이었다. 정해진 JSON 형식과 선택 가능 대상만 사용하라. 내부 추론은 쓰지 마라.'}]
+                            messages=messages+[{'role':'user','content':('직전 응답을 게시하지 않았다. '+str(e)+' 본인의 새 발언을 자연스러운 한국어 두 문장으로 마무리하라. 내부 추론은 쓰지 마라.' if protocol=='text' else '유효하지 않은 응답이었다. '+str(e)+' 정해진 JSON 형식과 선택 가능 대상만 사용하라. speech는 한국어 두 문장, memory는 짧게 마무리하고 내부 추론은 쓰지 마라.')}]
+                            messages=fit_request(messages,options,g.player(task['actor'])['model'])
                             prompt_scope=audit_prompt(frozen,task,messages)
                 else:g.advance()
             except ModelError as e:
@@ -101,12 +111,21 @@ class Manager:
                 if self.pause_requested or self.stop_requested:self.apply_control()
                 else:self.save()
             return self.snapshot()
+    def finish_limit(self,reason):
+        s=self.game.s
+        if s['status']=='completed':s['interviews_interrupted']=True
+        else:s['status']='invalid';s['winner']=None
+        s['phase']='finished';self.pause_requested=True
+        self.game.event('system',reason+' 도달 · '+('인터뷰 중단' if s['status']=='completed' else '무효 경기'))
+        self.last_error=reason+'에 도달해 종료했습니다. 한도를 무제한으로 늘리지 말고 모델 응답 기록을 확인하세요.'
+        self.save()
+
     async def loop(self):
-        deadline=time.monotonic()+7200
+        deadline=time.monotonic()+self.game.s['config'].get('max_runtime_minutes',45)*60
         try:
             while not self.pause_requested and not self.series_cancelled:
                 if time.monotonic()>deadline:
-                    self.pause();self.last_error='2시간 자동 진행 한도. 상태 확인 후 계속하세요.';break
+                    self.finish_limit('자동 진행 실행 시간 한도');break
                 await self.step(automatic=True)
                 if self.game.s['phase']=='finished':
                     s=self.game.s;cfg=GameConfig(**s['config'])

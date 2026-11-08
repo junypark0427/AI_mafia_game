@@ -55,6 +55,7 @@ class PlayerConfig(BaseModel):
     role: Role
 
 class Inference(BaseModel):
+    model_profiles: bool = True # Technical format/language adaptation only; no fixed persona.
     num_ctx: int = Field(default=2048,ge=2048,le=8192)
     num_batch: int = Field(default=128,ge=32,le=512)
     thinking: bool|None = None # Explicit runtime option, independent of persona mode.
@@ -81,6 +82,8 @@ class GameConfig(BaseModel):
     series_count: int = Field(default=1,ge=1,le=100)
     rotate_roles: bool = True
     max_days: int = Field(default=15,ge=2,le=30)
+    max_calls: int = Field(default=300,ge=12,le=2000)
+    max_runtime_minutes: int = Field(default=45,ge=1,le=180)
     mode: Literal['original','character']='original'
     intensity: Literal['weak','normal','strong']='normal'
     characters: dict[str,Character] = Field(default_factory=lambda:{k:Character(**v) for k,v in CHARACTERS.items()})

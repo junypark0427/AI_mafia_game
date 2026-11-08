@@ -9,7 +9,7 @@ FIELD_NAMES={
     'rounds':'낮 토론 라운드','series_count':'연속 대전 수','dead_reactions':'사망자 반응 횟수',
     'max_days':'최대 게임 일수','provider':'실행 공급자','mode':'대화 모드','intensity':'말투 강도',
     'instructions':'말투 지침','description':'설명','vocabulary':'주요 어휘','avoid':'사용하지 않을 표현',
-    'version':'캐릭터 버전','order':'발언 순서',
+    'max_calls':'모델 호출 한도','max_runtime_minutes':'자동 진행 시간 한도','num_batch':'처리 배치','model_profiles':'모델별 출력 보정','thinking':'추론 모드','num_gpu':'CPU 실행','version':'캐릭터 버전','order':'발언 순서',
 }
 MODEL_FIELDS={'participants_count':'players','player_ids':'players','models_distinct':'players',
     'mafia_count':'players','mafia_team_count':'players','role_count':'players',

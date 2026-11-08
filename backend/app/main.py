@@ -35,6 +35,8 @@ benchmark_job=None
 @asynccontextmanager
 async def lifespan(app):
     store.recover()
+    saved=store.all()
+    if saved:manager.game=Engine.restore(saved[0])
     await ollama.inventory()
     yield
     manager.pause_requested=True
@@ -82,11 +84,17 @@ async def model_error(request,exc):
 
 def public_snapshot():
     s=manager.snapshot()
+    if s['busy'] and s['busy']['kind'] in ('night','secret'):
+        s['busy']={'actor':None,'model':'비밀 행동','kind':'hidden','started':s['busy']['started'],'style':{'mode':s['busy']['style']['mode'],'character_applied':False}}
     if s['error']:s['error']='모델 응답 문제로 일시정지했습니다. 관리자가 상세 내용을 확인할 수 있습니다.'
     return s
 
 @app.get('/api/health')
-async def health():return await ollama.inventory()
+async def health():
+    inventory=await ollama.inventory()
+    if manager.busy and manager.busy['kind'] in ('night','secret'):
+        inventory['active']=None;inventory['loaded']=[]
+    return inventory
 @app.get('/api/state')
 async def state():return public_snapshot()
 @app.get('/api/events')
