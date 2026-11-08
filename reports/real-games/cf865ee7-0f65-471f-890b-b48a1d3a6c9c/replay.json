@@ -1,0 +1,100 @@
+{
+  "id": "cf865ee7-0f65-471f-890b-b48a1d3a6c9c",
+  "series_id": "e6fd3433-94e8-454e-91e0-5e7ff8a75704",
+  "series_index": 0,
+  "created_at": "2026-11-08T00:12:34.957641+00:00",
+  "status": "aborted",
+  "phase": "finished",
+  "day": 1,
+  "round": 1,
+  "revision": 4,
+  "winner": null,
+  "mixed": false,
+  "mode_history": [
+    "original"
+  ],
+  "players": [
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "model": "deepseek-r1:1.5b",
+      "alive": true,
+      "death_day": null,
+      "death_order": null,
+      "digest": "e0979632db5a88d1a53884cb2a941772d10ff5d055aabaa6801c4e36f3a6c2d7"
+    },
+    {
+      "id": "gemma",
+      "name": "Gemma",
+      "model": "gemma3:1b",
+      "alive": true,
+      "death_day": null,
+      "death_order": null,
+      "digest": "97558784bdc9175075a72655bf360b15da17df6b3b9e5182af9f8c0c8e58ba7c"
+    },
+    {
+      "id": "ministral",
+      "name": "Ministral",
+      "model": "ministral-3:3b",
+      "alive": true,
+      "death_day": null,
+      "death_order": null,
+      "digest": "f04aa1c738f64e13c625b82ae92504fc0260fa6723b509ed1ece0fa188179b1d"
+    },
+    {
+      "id": "exaone",
+      "name": "EXAONE",
+      "model": "exaone3.5:2.4b",
+      "alive": true,
+      "death_day": null,
+      "death_order": null,
+      "digest": "13644fc3d28eaaff502f903406496cad15df31e367cb7be988c132def104ba42"
+    },
+    {
+      "id": "qwen",
+      "name": "Qwen",
+      "model": "qwen3:1.7b",
+      "alive": true,
+      "death_day": null,
+      "death_order": null,
+      "digest": "8f68893c685c3ddff2aa3fffce2aa60a30bb2da65ca488b61fff134a4d1730e7"
+    },
+    {
+      "id": "llama",
+      "name": "Llama",
+      "model": "llama3.2:3b",
+      "alive": true,
+      "death_day": null,
+      "death_order": null,
+      "digest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72"
+    }
+  ],
+  "events": [
+    {
+      "id": 1,
+      "at": "2026-11-08T00:12:34.957654+00:00",
+      "day": 1,
+      "phase": "discussion",
+      "kind": "system",
+      "text": "게임 시작 · 첫날 낮이 밝았습니다.",
+      "actor": null,
+      "channel": "public"
+    },
+    {
+      "id": 2,
+      "at": "2026-11-08T03:52:09.714286+00:00",
+      "day": 1,
+      "phase": "finished",
+      "kind": "system",
+      "text": "관리자가 진행을 중단했습니다.",
+      "actor": null,
+      "channel": "public"
+    }
+  ],
+  "mode": "original",
+  "intensity": "normal",
+  "provider": "ollama",
+  "rounds": 3,
+  "series_count": 1,
+  "interviews_pending": false
+}

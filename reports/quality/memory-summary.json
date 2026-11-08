@@ -1,0 +1,15 @@
+{
+  "actual_calls": 29,
+  "samples": 1003,
+  "min_available_gib": 1.101,
+  "peak_psutil_used_gib": 4.803,
+  "swap_min_gib": 2.977,
+  "swap_max_gib": 4.173,
+  "pressure_counts": {
+    "normal": 950,
+    "warning": 53,
+    "critical": 0
+  },
+  "confirmed_unload": 29,
+  "note": "System-wide observations across distinct tests, not per-model allocation. Historical 7B safety stops excluded."
+}

@@ -1,0 +1,173 @@
+{
+  "ollama_version": "0.34.3",
+  "models": [
+    {
+      "model": "deepseek-r1:1.5b",
+      "digest": "e0979632db5a88d1a53884cb2a941772d10ff5d055aabaa6801c4e36f3a6c2d7",
+      "size_bytes": 1117322768,
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "qwen2",
+        "families": [
+          "qwen2"
+        ],
+        "parameter_size": "1.8B",
+        "quantization_level": "Q4_K_M"
+      },
+      "capabilities": [
+        "tools",
+        "thinking",
+        "completion"
+      ],
+      "thinking": null,
+      "template_sha256": "b6835114b7303ddd78919a82e4d9f7d8c26ed0d7dfc36beeb12d524f6144eab1",
+      "template_characters": 2081,
+      "parameters": "stop                           \"<｜begin▁of▁sentence｜>\"\nstop                           \"<｜end▁of▁sentence｜>\"\nstop                           \"<｜User｜>\"\nstop                           \"<｜Assistant｜>\"",
+      "template_source": null,
+      "renderer": null,
+      "parser": null
+    },
+    {
+      "model": "gemma3:1b",
+      "digest": "97558784bdc9175075a72655bf360b15da17df6b3b9e5182af9f8c0c8e58ba7c",
+      "size_bytes": 806067407,
+      "details": {
+        "parent_model": "dhiltgen/gemma3:1b-it-q4_K_M-llamacpp",
+        "format": "gguf",
+        "family": "gemma3",
+        "families": [
+          "gemma3"
+        ],
+        "parameter_size": "999.89M",
+        "quantization_level": "Q4_K_M"
+      },
+      "capabilities": [
+        "completion"
+      ],
+      "thinking": null,
+      "template_sha256": "e0a42594d802e5d31cdc786deb4823edb8adff66094d49de8fffe976d753e348",
+      "template_characters": 358,
+      "parameters": "stop                           \"<end_of_turn>\"\ntemperature                    1\ntop_k                          64\ntop_p                          0.95",
+      "template_source": null,
+      "renderer": null,
+      "parser": null
+    },
+    {
+      "model": "ministral-3:3b",
+      "digest": "f04aa1c738f64e13c625b82ae92504fc0260fa6723b509ed1ece0fa188179b1d",
+      "size_bytes": 2953840808,
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "mistral3",
+        "families": [
+          "mistral3"
+        ],
+        "parameter_size": "3.8B",
+        "quantization_level": "Q4_K_M"
+      },
+      "capabilities": [
+        "completion",
+        "vision",
+        "tools"
+      ],
+      "thinking": null,
+      "template_sha256": "24c6226aca35b16350187fb9125e7cb4e746795c78edd3cb1de45654c7e77181",
+      "template_characters": 3413,
+      "parameters": "temperature                    0.15",
+      "template_source": null,
+      "renderer": null,
+      "parser": null
+    },
+    {
+      "model": "exaone3.5:2.4b",
+      "digest": "13644fc3d28eaaff502f903406496cad15df31e367cb7be988c132def104ba42",
+      "size_bytes": 1644933401,
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "exaone",
+        "families": [
+          "exaone"
+        ],
+        "parameter_size": "2.7B",
+        "quantization_level": "Q4_K_M"
+      },
+      "capabilities": [
+        "completion"
+      ],
+      "thinking": null,
+      "template_sha256": "37cddd3bd818d29cacc4a39d1f0c1dd8d4b152c7f0b7277107a6344a4f9e2244",
+      "template_characters": 375,
+      "parameters": "repeat_penalty                 1\nstop                           \"[|endofturn|]\"\ntemperature                    1",
+      "template_source": null,
+      "renderer": null,
+      "parser": null
+    },
+    {
+      "model": "qwen3:1.7b",
+      "digest": "8f68893c685c3ddff2aa3fffce2aa60a30bb2da65ca488b61fff134a4d1730e7",
+      "size_bytes": 1359293444,
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "qwen3",
+        "families": [
+          "qwen3"
+        ],
+        "parameter_size": "2.0B",
+        "quantization_level": "Q4_K_M"
+      },
+      "capabilities": [
+        "completion",
+        "tools",
+        "thinking"
+      ],
+      "thinking": {
+        "values": [
+          false,
+          true
+        ],
+        "default": true
+      },
+      "template_sha256": "ae370d884f108d16e7cc8fd5259ebc5773a0afa6e078b11f4ed7e39a27e0dfc4",
+      "template_characters": 1723,
+      "parameters": "top_p                          0.95\nrepeat_penalty                 1\nstop                           \"<|im_start|>\"\nstop                           \"<|im_end|>\"\ntemperature                    0.6\ntop_k                          20",
+      "template_source": null,
+      "renderer": null,
+      "parser": null
+    },
+    {
+      "model": "llama3.2:3b",
+      "digest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+      "size_bytes": 2019393189,
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "llama",
+        "families": [
+          "llama"
+        ],
+        "parameter_size": "3.2B",
+        "quantization_level": "Q4_K_M"
+      },
+      "capabilities": [
+        "completion",
+        "tools"
+      ],
+      "thinking": {
+        "values": [
+          false
+        ],
+        "default": false
+      },
+      "template_sha256": "966de95ca8a62200913e3f8bfbf84c8494536f1b94b49166851e76644e966396",
+      "template_characters": 1429,
+      "parameters": "stop                           \"<|start_header_id|>\"\nstop                           \"<|end_header_id|>\"\nstop                           \"<|eot_id|>\"",
+      "template_source": null,
+      "renderer": null,
+      "parser": null
+    }
+  ]
+}
