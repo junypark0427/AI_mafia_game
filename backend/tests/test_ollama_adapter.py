@@ -57,3 +57,36 @@ async def test_pressure_cancels_and_unloads(fake_ollama,monkeypatch):
     with pytest.raises(ModelError,match='메모리 압박'):
         await o.generate(model,[{'role':'user','content':'test'}],Inference().model_dump())
     assert not state['loaded'] and any(path=='/api/generate' for path,_ in calls)
+
+async def test_risk_once_uses_same_single_model_and_unloads(fake_ollama,monkeypatch):
+    o,model,calls,state=fake_ollama
+    import app.ollama as adapter
+    monkeypatch.setattr(adapter,'memory_snapshot',lambda:{'total_gb':8,'available_gb':.8,'used_gb':5,'swap_gb':3,'pressure':'warning'})
+    with pytest.raises(ModelError):await o.generate(model,[{'role':'user','content':'test'}],Inference().model_dump())
+    content,metrics=await o.generate(model,[{'role':'user','content':'test'}],Inference().model_dump(),risk_once=True)
+    assert content and metrics['risk_once'] and metrics['unloaded'] and not state['loaded']
+    assert len([p for path,p in calls if path=='/api/chat'])==1
+
+async def test_user_cancel_closes_request_and_unloads(fake_ollama):
+    o,model,calls,state=fake_ollama
+    task=asyncio.create_task(o.generate(model,[{'role':'user','content':'test'}],Inference().model_dump()))
+    await asyncio.sleep(.001);task.cancel()
+    with pytest.raises(asyncio.CancelledError):await task
+    assert not state['loaded'] and any(path=='/api/generate' for path,_ in calls)
+
+async def test_explicit_cpu_option_is_sent_and_recorded(fake_ollama):
+    o,model,calls,_=fake_ollama
+    options=Inference(num_gpu=0).model_dump()
+    _,metrics=await o.generate(model,[{'role':'user','content':'test'}],options)
+    payload=next(p for path,p in calls if path=='/api/chat')
+    assert payload['options']['num_gpu']==0 and metrics['runtime_options']['num_gpu']==0
+
+async def test_explicit_thinking_option_only_for_capable_model(fake_ollama,monkeypatch):
+    o,model,calls,_=fake_ollama
+    original_inventory=o.inventory
+    async def inventory():
+        result=await original_inventory();o.models[model]['capabilities']=['thinking'];return result
+    monkeypatch.setattr(o,'inventory',inventory)
+    _,metrics=await o.generate(model,[{'role':'user','content':'test'}],Inference(thinking=False).model_dump())
+    payload=next(p for path,p in calls if path=='/api/chat')
+    assert payload['think'] is False and metrics['thinking_requested'] is False

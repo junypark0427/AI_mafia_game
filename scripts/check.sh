@@ -7,4 +7,5 @@ if ! command -v node >/dev/null 2>&1; then
   done
 fi
 .venv/bin/python -m pytest -q
+npm test --prefix frontend
 npm run build --prefix frontend

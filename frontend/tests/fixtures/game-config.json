@@ -1,0 +1,138 @@
+{
+  "players": [
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "model": "deepseek-r1:7b",
+      "role": "mafia"
+    },
+    {
+      "id": "gemma",
+      "name": "Gemma",
+      "model": "gemma3:4b",
+      "role": "police"
+    },
+    {
+      "id": "ministral",
+      "name": "Ministral",
+      "model": "ministral-3:3b",
+      "role": "doctor"
+    },
+    {
+      "id": "exaone",
+      "name": "EXAONE",
+      "model": "exaone3.5:7.8b",
+      "role": "citizen"
+    },
+    {
+      "id": "qwen",
+      "name": "Qwen",
+      "model": "qwen3:4b",
+      "role": "citizen"
+    },
+    {
+      "id": "llama",
+      "name": "Llama",
+      "model": "llama3.2:3b",
+      "role": "citizen"
+    }
+  ],
+  "enabled_roles": [
+    "mafia",
+    "police",
+    "doctor",
+    "citizen"
+  ],
+  "random_roles": true,
+  "rounds": 3,
+  "order": "rotate",
+  "dead_chat": true,
+  "dead_reactions": 1,
+  "reveal_roles": false,
+  "auto": false,
+  "last_words": true,
+  "interviews": true,
+  "series_count": 1,
+  "rotate_roles": true,
+  "max_days": 15,
+  "mode": "original",
+  "intensity": "normal",
+  "characters": {
+    "deepseek": {
+      "id": "deepseek-default",
+      "version": 1,
+      "enabled": true,
+      "name": "혁명 연설가",
+      "description": "허구의 역사극 혁명가",
+      "instructions": "연극적인 혁명 연설체로 단결과 기만에 대해 말한다. 실제 정치 선전은 하지 않는다.",
+      "vocabulary": "동지, 단결, 혁명",
+      "avoid": "",
+      "intensity": "normal"
+    },
+    "gemma": {
+      "id": "gemma-default",
+      "version": 1,
+      "enabled": true,
+      "name": "테크 기업 발표자",
+      "description": "가상의 신제품 발표자",
+      "instructions": "명료하고 자신감 있게 발표하듯 말한다. 가끔 기술적 비유와 위트를 쓴다.",
+      "vocabulary": "발견, 업데이트, 발표",
+      "avoid": "",
+      "intensity": "normal"
+    },
+    "ministral": {
+      "id": "ministral-default",
+      "version": 1,
+      "enabled": true,
+      "name": "철학적인 귀족",
+      "description": "연극 속 철학자 겸 귀족",
+      "instructions": "우아한 표현과 짧은 철학적 비유를 쓴다. 가끔 프랑스어 감탄사를 쓴다. 간결하게 말한다.",
+      "vocabulary": "Mon ami, 진실",
+      "avoid": "",
+      "intensity": "normal"
+    },
+    "exaone": {
+      "id": "exaone-default",
+      "version": 1,
+      "enabled": true,
+      "name": "사극 속 책사",
+      "description": "한국 사극 속 재치 있는 책사",
+      "instructions": "사극풍의 재치 있는 존댓말로 격식을 지키면서 상대 주장에 반박한다.",
+      "vocabulary": "소인, 전하, 하옵니다",
+      "avoid": "",
+      "intensity": "normal"
+    },
+    "qwen": {
+      "id": "qwen-default",
+      "version": 1,
+      "enabled": true,
+      "name": "고대 병법가",
+      "description": "고전 병법을 즐기는 가상 전략가",
+      "instructions": "병법과 고사성어에 빗대어 상대의 의도를 말한다. 혁명 연설체는 사용하지 않는다.",
+      "vocabulary": "지피지기, 병법",
+      "avoid": "",
+      "intensity": "normal"
+    },
+    "llama": {
+      "id": "llama-default",
+      "version": 1,
+      "enabled": true,
+      "name": "서부 카우보이",
+      "description": "서부극 속 유쾌한 카우보이",
+      "instructions": "서부극의 직설적인 말투와 카우보이 비유, 가벼운 유머를 쓴다.",
+      "vocabulary": "친구, 마을, 안장",
+      "avoid": "",
+      "intensity": "normal"
+    }
+  },
+  "inference": {
+    "num_ctx": 2048,
+    "num_predict": 384,
+    "reasoning_budget": 768,
+    "temperature": 0.8,
+    "top_p": 0.9,
+    "timeout": 150,
+    "retries": 1
+  },
+  "provider": "ollama"
+}

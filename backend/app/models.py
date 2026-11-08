@@ -3,6 +3,7 @@ from collections import Counter
 from enum import StrEnum
 from typing import Literal
 from pydantic import BaseModel, Field, model_validator
+from pydantic_core import PydanticCustomError
 
 class Role(StrEnum):
     MAFIA='mafia'
@@ -55,6 +56,9 @@ class PlayerConfig(BaseModel):
 
 class Inference(BaseModel):
     num_ctx: int = Field(default=2048,ge=2048,le=8192)
+    num_batch: int = Field(default=128,ge=32,le=512)
+    thinking: bool|None = None # Explicit runtime option, independent of persona mode.
+    num_gpu: Literal[0]|None = None # Explicit CPU mode; None preserves Ollama auto selection.
     num_predict: int = Field(default=384,ge=128,le=1024)
     reasoning_budget: int = Field(default=768,ge=384,le=2048)
     temperature: float = Field(default=.8,ge=0,le=1.5)
@@ -86,20 +90,21 @@ class GameConfig(BaseModel):
     @model_validator(mode='after')
     def validate_game(self):
         if len(self.players)!=6 or len({p.id for p in self.players})!=6:
-            raise ValueError('서로 다른 ID의 참가자 6명이 필요합니다.')
+            raise PydanticCustomError('participants_count','서로 다른 ID의 참가자 6명이 필요합니다.')
         if {p.id for p in self.players}!={c['id'] for c in CATALOG}:
-            raise ValueError('기본 여섯 참가자 ID를 사용하세요.')
+            raise PydanticCustomError('player_ids','기본 여섯 참가자 ID를 사용하세요.')
         if self.provider=='ollama' and len({p.model for p in self.players})!=6:
-            raise ValueError('실제 경기는 서로 다른 모델 태그 6개를 선택하세요.')
+            raise PydanticCustomError('models_distinct','실제 경기는 서로 다른 모델 태그 6개를 선택하세요.')
         counts=Counter(p.role for p in self.players)
-        if not 1<=counts[Role.MAFIA]<=2: raise ValueError('실제 마피아는 1~2명이어야 합니다.')
-        if counts[Role.MAFIA]+counts[Role.SPY]>2: raise ValueError('마피아 진영 전체는 최대 2명입니다.')
+        if not 1<=counts[Role.MAFIA]<=2: raise PydanticCustomError('mafia_count','마피아는 1~2명을 배정해야 합니다. 현재 {count}명입니다.',{'count':counts[Role.MAFIA]})
+        if counts[Role.MAFIA]+counts[Role.SPY]>2: raise PydanticCustomError('mafia_team_count','마피아와 스파이를 합쳐 최대 2명까지 배정할 수 있습니다.')
         for r in (Role.POLICE,Role.DOCTOR,Role.BODYGUARD,Role.SPY):
-            if counts[r]>1: raise ValueError(f'{ROLE_NAMES[r]}은 최대 1명입니다.')
-        if any(p.role not in self.enabled_roles for p in self.players):
-            raise ValueError('비활성화한 직업이 실제 배정에 포함되어 있습니다.')
+            if counts[r]>1: raise PydanticCustomError('role_count','{role}은 최대 1명까지 배정할 수 있습니다. 현재 {count}명입니다.',{'role':ROLE_NAMES[r],'count':counts[r]})
+        disabled=[f'{p.name}({ROLE_NAMES[p.role]})' for p in self.players if p.role not in self.enabled_roles]
+        if disabled:
+            raise PydanticCustomError('assigned_role_disabled','비활성화된 직업이 배정되어 있습니다: {players}. 해당 직업을 다시 켜거나 참가자의 직업을 바꾸세요.',{'players':', '.join(disabled)})
         if not {p.id for p in self.players}<=self.characters.keys():
-            raise ValueError('참가자별 캐릭터 설정이 필요합니다.')
+            raise PydanticCustomError('character_missing','참가자별 캐릭터 설정이 필요합니다. 기본 캐릭터 설정을 복원하세요.')
         return self
 
 def team(role):

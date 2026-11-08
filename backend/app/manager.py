@@ -3,7 +3,7 @@ import asyncio,copy,json,time
 from .models import GameConfig
 from .engine import Engine,now
 from .ollama import ModelError,MockAI,clean_final
-from .prompts import build_prompt,style_snapshot,SCHEMA
+from .prompts import build_prompt,audit_prompt,schema_for,style_snapshot,SCHEMA
 
 class Conflict(Exception):pass
 
@@ -21,8 +21,8 @@ class Manager:
         async with self.lock:
             if cfg.provider=='ollama':
                 inventory=await self.ollama.inventory()
-                if not inventory['online']:raise ModelError('Ollama 서버를 시작하세요.')
-                for p in cfg.players:self.ollama.guard(p.model)
+                if not inventory['online']:raise ModelError('Ollama 서버를 시작하세요.',code='ollama_offline')
+                for p in cfg.players:self.ollama.guard(p.model,cfg.inference.model_dump())
             self.game=Engine(cfg);self.last_error=None;self.series_cancelled=False
             for p in self.game.s['players']:p['digest']=self.ollama.models.get(p['model'],{}).get('digest') if cfg.provider=='ollama' else 'mock'
             self.pause_requested=False;self.stop_requested=False;self.save()
@@ -63,6 +63,7 @@ class Manager:
                 if task:
                     # Snapshot BEFORE awaiting generation. Mode edits affect only the next request.
                     frozen=Engine.restore(copy.deepcopy(g.s));messages,style=build_prompt(frozen,task)
+                    prompt_scope=audit_prompt(frozen,task,messages)
                     self.busy={'actor':task['actor'],'model':g.player(task['actor'])['model'],'kind':task['kind'],'style':style,'started':time.time()}
                     tries=g.s['config']['inference']['retries']+1
                     for attempt in range(tries):
@@ -70,7 +71,7 @@ class Manager:
                         try:
                             if g.s['config']['provider']=='mock':result,metric=await MockAI().act(frozen,task)
                             else:
-                                text,metric=await self.ollama.generate(g.player(task['actor'])['model'],messages,g.s['config']['inference'],SCHEMA)
+                                text,metric=await self.ollama.generate(g.player(task['actor'])['model'],messages,g.s['config']['inference'],schema_for(task))
                                 result=json.loads(clean_final(text))
                                 if not isinstance(result,dict) or set(result)!={'speech','target','memory'}:raise ValueError('JSON 필드가 유효하지 않습니다.')
                                 if not isinstance(result['speech'],str) or not isinstance(result['memory'],str):raise ValueError('발언 및 메모 타입 오류')
@@ -79,12 +80,17 @@ class Manager:
                                 raise ModelError('경기 중 모델 버전이 변경되었습니다. 새 경기를 시작하세요.')
                             if len(result.get('speech',''))>1800 or len(result.get('memory',''))>220:raise ValueError('출력 길이 제한 초과')
                             g.apply(task,result,style)
-                            g.s['calls'].append(dict(metric,actor=task['actor'],kind=task['kind'],day=g.s['day'],target=result.get('target'),style=style,at=now()))
+                            g.s['calls'].append(dict(metric,prompt_scope=prompt_scope,actor=task['actor'],kind=task['kind'],day=g.s['day'],target=result.get('target'),style=style,at=now()))
                             break
                         except (ModelError,ValueError,TypeError) as e:
-                            g.s['calls'].append({'actor':task['actor'],'model':g.player(task['actor'])['model'],'kind':task['kind'],'day':g.s['day'],'seconds':metric['seconds'] if metric else 0,'error':str(e),'style':style,'at':now()})
-                            if attempt+1==tries:raise ModelError(str(e))
+                            failed_metric=metric or (e.metrics if isinstance(e,ModelError) else {})
+                            g.s['calls'].append(dict(failed_metric,prompt_scope=prompt_scope,actor=task['actor'],model=g.player(task['actor'])['model'],kind=task['kind'],day=g.s['day'],seconds=failed_metric.get('seconds',0),error=str(e),error_code=e.code if isinstance(e,ModelError) else 'invalid_action',style=style,at=now()))
+                            retryable=not isinstance(e,ModelError) or e.code in ('ollama_transport_error','ollama_http_error','timeout','invalid_output','empty_final_output')
+                            if attempt+1==tries or not retryable:
+                                if isinstance(e,ModelError):raise
+                                raise ModelError(str(e),code='invalid_action') from e
                             messages=messages+[{'role':'user','content':'유효하지 않은 응답이었다. 정해진 JSON 형식과 선택 가능 대상만 사용하라. 내부 추론은 쓰지 마라.'}]
+                            prompt_scope=audit_prompt(frozen,task,messages)
                 else:g.advance()
             except ModelError as e:
                 self.last_error=str(e);self.pause_requested=True

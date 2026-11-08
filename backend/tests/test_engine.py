@@ -84,3 +84,9 @@ def test_dead_reactions_daily_cap():
     e.phase('dead',['llama']);e.apply(e.next_task(),{'speech':'reaction','memory':''},{})
     assert e.dead_queue()==[]
     e.s['day']+=1;assert e.dead_queue()==['llama']
+
+def test_max_day_limit_is_invalid_without_winner():
+    e=Engine(GameConfig(provider='mock',random_roles=False,max_days=2))
+    e.s['day']=2;e.phase('dead',[]);e.s['after_dead']='day'
+    e.advance()
+    assert e.s['status']=='invalid' and e.s['phase']=='finished' and e.s['winner'] is None

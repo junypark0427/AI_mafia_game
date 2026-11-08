@@ -108,3 +108,42 @@ async def test_series_sequential(manager):
     await asyncio.wait_for(manager.auto_task,45)
     assert len(manager.store.all())==2
     assert all(s['status']=='completed' for s in manager.store.all())
+
+async def test_memory_emergency_is_not_retried_and_metrics_survive(manager,monkeypatch):
+    await manager.start(GameConfig(provider='mock',random_roles=False))
+    manager.game.s['config']['provider']='ollama';attempts=[]
+    async def unsafe(*args,**kwargs):
+        attempts.append(1)
+        raise ModelError('critical',code='memory_emergency_stop',attempted=True,metrics={'seconds':2.1,'unloaded':True,'tokens':0})
+    monkeypatch.setattr(manager.ollama,'generate',unsafe)
+    await manager.step(manager.game.s['revision'])
+    assert len(attempts)==1 and manager.game.s['status']=='paused'
+    record=manager.game.s['calls'][-1]
+    assert record['error_code']=='memory_emergency_stop' and record['seconds']==2.1 and record['unloaded']
+
+def test_actual_prompt_scope_audit_rejects_hidden_role(engine):
+    from app.prompts import audit_prompt
+    task={'actor':'qwen','kind':'speech','eligible':[]};messages,_=build_prompt(engine,task)
+    scope=audit_prompt(engine,task,messages)
+    assert scope['private_owner']=='qwen' and scope['teammate_ids']==[] and scope['verified']
+    blocks=messages[1]['content'].split('\n\n')
+    context=json.loads(blocks[1].partition(': ')[2]);context['players'][0]['role']='마피아'
+    blocks[1]='확정 공개 사건과 주관적 기억을 구분한 자료: '+json.dumps(context,ensure_ascii=False)
+    messages[1]['content']='\n\n'.join(blocks)
+    with pytest.raises(ModelError,match='정보 격리'):audit_prompt(engine,task,messages)
+
+def test_action_schema_limits_only_legal_model_choices():
+    from app.prompts import schema_for
+    vote=schema_for({'kind':'vote','eligible':['gemma','qwen']})
+    assert vote['properties']['target']['enum']==['gemma','qwen']
+    speech=schema_for({'kind':'speech','eligible':[]})
+    assert speech['properties']['target']=={'type':'null'}
+
+def test_defense_request_is_distinct_and_keeps_choice_autonomy(engine):
+    engine.s['phase']='defense';messages,_=build_prompt(engine,engine.next_task())
+    assert '최후 변론' in messages[1]['content'] and '유지하거나 바꾸는 선택은 자유' in messages[1]['content']
+
+def test_action_payload_does_not_spend_budget_on_unspoken_dialogue():
+    from app.prompts import schema_for
+    schema=schema_for({'kind':'vote','eligible':['gemma','qwen']})
+    assert schema['properties']['speech']['enum']==[''] and schema['properties']['memory']['enum']==['']

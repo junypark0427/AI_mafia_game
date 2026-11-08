@@ -1,9 +1,11 @@
 from __future__ import annotations
 import asyncio,json,os,secrets,hmac
+from uuid import uuid4
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 from fastapi import FastAPI,Depends,Header,HTTPException,Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import StreamingResponse,FileResponse
@@ -12,9 +14,10 @@ from pydantic import BaseModel,Field
 from .models import GameConfig,Character,CHARACTERS,Inference
 from .engine import Engine
 from .storage import Store
-from .ollama import Ollama,ModelError
+from .ollama import Ollama,ModelError,memory_snapshot
 from .manager import Manager,Conflict
 from .benchmark import run_benchmark
+from .errors import validation_response
 
 ROOT=Path(__file__).resolve().parents[2]
 DATA=Path(os.getenv('AI_MAFIA_DATA',str(ROOT/'data')));DATA.mkdir(parents=True,exist_ok=True)
@@ -27,6 +30,7 @@ else:
 if len(TOKEN)<24:raise RuntimeError('ADMIN_TOKEN은 24자 이상이어야 합니다.')
 store=Store(DATA/'mafia.sqlite3');ollama=Ollama(os.getenv('OLLAMA_URL','http://127.0.0.1:11434'));manager=Manager(store,ollama)
 benchmark_task=None
+benchmark_job=None
 
 @asynccontextmanager
 async def lifespan(app):
@@ -66,10 +70,15 @@ async def security_headers(request,call_next):
 async def conflict(request,exc):
     from fastapi.responses import JSONResponse
     return JSONResponse(status_code=409,content={'detail':str(exc)})
+@app.exception_handler(RequestValidationError)
+async def invalid_request(request,exc):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=422,content=validation_response(exc))
+
 @app.exception_handler(ModelError)
 async def model_error(request,exc):
     from fastapi.responses import JSONResponse
-    return JSONResponse(status_code=422,content={'detail':str(exc)})
+    return JSONResponse(status_code=503,content={'detail':str(exc),'message':str(exc),'code':exc.code,'hint':exc.hint})
 
 def public_snapshot():
     s=manager.snapshot()
@@ -146,19 +155,54 @@ async def style(c:StyleUpdate):
 class BenchmarkRequest(BaseModel):
     models:list[str]=Field(min_length=1,max_length=12)
     quality:bool=False
+    risk_once:bool=False
     inference:Inference=Field(default_factory=Inference)
+@app.post('/api/admin/benchmark/preflight',dependencies=[Depends(admin)])
+async def benchmark_preflight(b:BenchmarkRequest):
+    inventory=await ollama.inventory()
+    assessments=[ollama.assessment(model,b.inference.model_dump()) for model in b.models] if inventory['online'] else [
+        {'model':model,'state':'blocked','code':'ollama_offline','can_override':False,'reason':'Ollama 서버에 연결할 수 없습니다.','warnings':[],'notes':[],'memory':inventory['memory']} for model in b.models]
+    return {'online':inventory['online'],'loaded':inventory.get('loaded',[]),'models':assessments}
+
 @app.post('/api/admin/benchmark',dependencies=[Depends(admin)])
 async def benchmark(b:BenchmarkRequest):
-    global benchmark_task
+    global benchmark_task,benchmark_job
     if manager.lock.locked() or manager.benchmark_busy or (manager.auto_task and not manager.auto_task.done()):raise Conflict('게임을 일시정지하고 진행 중인 추론이 끝난 후 실행하세요.')
+    if b.risk_once and (len(b.models)!=1 or b.quality):raise HTTPException(422,'위험을 감수한 실행은 한 모델·한 응답만 허용합니다. 여러 모델이나 6개 상황 테스트에는 적용할 수 없습니다.')
+    options=b.inference.model_dump()
+    if b.risk_once:options['retries']=0
     manager.benchmark_busy=True
+    benchmark_job={'id':str(uuid4()),'status':'running','models':b.models,'risk_once':b.risk_once,'cancel_requested':False,'progress':{}}
+    job=benchmark_job
     async def run():
-        try:await run_benchmark(ollama,store,b.models,b.inference.model_dump(),b.quality)
+        try:
+            await run_benchmark(ollama,store,b.models,options,b.quality,risk_once=b.risk_once,progress=job['progress'])
+            job['status']='cancelled' if job['cancel_requested'] else 'finished'
+        except asyncio.CancelledError:job['status']='cancelled'
+        except Exception as e:job.update(status='failed',error=f'{type(e).__name__}: {e}')
         finally:manager.benchmark_busy=False
     benchmark_task=asyncio.create_task(run())
-    return {'started':True}
+    def finished(task):
+        manager.benchmark_busy=False
+        if task.cancelled():job['status']='cancelled'
+    benchmark_task.add_done_callback(finished)
+    return {'started':True,'job_id':job['id'],'risk_once':b.risk_once}
+
+@app.get('/api/admin/benchmark/status',dependencies=[Depends(admin)])
+async def benchmark_status():
+    return {'job':benchmark_job,'active':ollama.active,'busy':manager.benchmark_busy,'memory':memory_snapshot()}
+
+@app.post('/api/admin/benchmark/cancel',dependencies=[Depends(admin)])
+async def benchmark_cancel():
+    if benchmark_task and not benchmark_task.done() and benchmark_job and not benchmark_job['cancel_requested']:
+        benchmark_job['cancel_requested']=True
+        benchmark_task.cancel() # generate() closes its stream, unloads, then records cancellation.
+    return {'requested':bool(benchmark_job and benchmark_job['cancel_requested'])}
+
 @app.get('/api/admin/benchmarks',dependencies=[Depends(admin)])
-async def benchmarks():return store.benchmarks()
+async def benchmarks():
+    # Keep raw samples in SQLite; avoid resending large time series every UI poll.
+    return [{k:v for k,v in r.items() if k!='memory_samples'}|{'sample_count':len(r.get('memory_samples',[]))} for r in store.benchmarks()]
 
 DIST=ROOT/'frontend'/'dist'
 if DIST.exists():

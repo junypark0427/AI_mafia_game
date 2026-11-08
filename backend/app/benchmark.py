@@ -9,15 +9,35 @@ SCENARIOS=[
  ('defense','너는 시민이다. 동료들이 너를 처형하려 한다. 마지막으로 설득하거나 원하는 반응을 하라.'),
  ('dead','너는 억울하게 처형된 시민이다. 생존한 Qwen이 "잘 처형한 것 같다"고 말했다. 사망자 전용 채팅에서 관전 소감을 말하라.'),
 ]
-async def run_benchmark(ollama,store,models,options,quality=False):
+async def run_benchmark(ollama,store,models,options,quality=False,*,risk_once=False,progress=None):
+    import asyncio
+    options=dict(options)
+    if risk_once:options['retries']=0
     results=[]
+    progress=progress if progress is not None else {}
+    # A risk acknowledgement covers one model, one prompt, one actual attempt.
+    if risk_once and (len(models)!=1 or quality):raise ValueError('위험 실행은 단일 모델·단일 응답만 허용합니다.')
     for model in models:
         for scenario,prompt in SCENARIOS if quality else SCENARIOS[:1]:
-            r={'at':now(),'model':model,'scenario':scenario,'quality_status':'사람의 검토 필요','options':options}
-            try:
-                content,metrics=await ollama.generate(model,[{'role':'system','content':RULES},{'role':'user','content':prompt}],options)
-                r.update(metrics,output=content,error=None,hangul_characters=sum('가'<=c<='힣' for c in content))
-            except ModelError as e:r.update(error=str(e),output=None)
-            store.benchmark(r);results.append(r)
+            progress.update(model=model,scenario=scenario,phase='preflight')
+            limit=1 if risk_once else min(options.get('retries',1)+1,2)
+            for attempt in range(limit):
+                r={'at':now(),'model':model,'scenario':scenario,'quality_status':'사람의 검토 필요','options':dict(options),
+                   'risk_once':risk_once,'attempt':attempt+1,'attempted':False,'outcome':'deferred'}
+                try:
+                    kwargs={'risk_once':True} if risk_once else {}
+                    content,metrics=await ollama.generate(model,[{'role':'system','content':RULES},{'role':'user','content':prompt}],options,**kwargs)
+                    r.update(metrics,output=content,error=None,outcome='success',hangul_characters=sum('가'<=c<='힣' for c in content))
+                except asyncio.CancelledError as e:
+                    r.update(getattr(e,'metrics',{}),error='사용자가 실험을 중단했습니다.',error_code='cancelled',output=None,outcome='cancelled')
+                    store.benchmark(r);results.append(r);progress.update(phase='cancelled');return results
+                except ModelError as e:
+                    outcome='emergency_stopped' if e.code=='memory_emergency_stop' else 'failed' if e.attempted else 'deferred'
+                    r.update(e.metrics,error=str(e),error_code=e.code,output=None,outcome=outcome,attempted=e.attempted,phase=e.phase)
+                store.benchmark(r);results.append(r);progress.update(completed=len(results),last_outcome=r['outcome'])
+                retry=r.get('error_code') in ('ollama_transport_error','ollama_http_error','timeout') and attempt+1<limit
+                if not retry:break
+                progress['phase']='retrying';await asyncio.sleep(.5)
+            # This model's refusal/failure never prevents the next selected model from running.
             if r.get('error'):break
     return results
